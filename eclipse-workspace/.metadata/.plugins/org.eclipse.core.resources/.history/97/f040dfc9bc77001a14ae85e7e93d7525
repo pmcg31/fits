@@ -1,0 +1,263 @@
+package com.explorelearnshare;
+
+import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferUShort;
+import java.awt.image.Raster;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+
+import javax.imageio.ImageIO;
+
+public class FITSView implements Runnable {
+
+	public static void main(String[] args) {
+		File initialImage = null;
+		
+		if (args.length == 1) {
+			initialImage = new File(args[0]);
+			if (!(initialImage.exists() && initialImage.isFile())) {
+				System.out.println("First argument, if provided, must be an existing FITS image");
+				System.exit(1);
+			}
+		}
+		
+		new FITSView(initialImage).run();
+	}
+
+	public FITSView(File initialImage) {
+		_imageFile = initialImage;
+		_in = null;
+		_hdu = new byte[g_hduSize];
+		_tags = new HashMap<String, Tag>();
+	}
+	
+	public FITSView() {
+		this(null);
+	}
+	
+	public void setImage(File imageFile) {
+		_imageFile = imageFile;
+	}
+	
+	@Override
+	public void run() {
+		if (_imageFile != null) {
+			processImage();
+			
+			ArrayList<Tag> values = new ArrayList<Tag>(_tags.values());
+			values.sort(new Comparator<Tag>() {
+				@Override
+				public int compare(Tag o1, Tag o2) {
+					return o1.ordinal - o2.ordinal;
+				}
+			});
+			
+			for (Tag t : values) {
+				System.out.println(t.ordinal +": ["+ t.key +"] = ["+ t.value +"] ["+ t.comment +"]");
+			}
+		}
+	}
+
+	private void processImage() {
+		openFile();
+		
+		readAndParseHeader();
+		
+		readImage();
+		
+		closeFile();
+	}
+	
+	private void openFile() {
+		try {
+			_in = new FileInputStream(_imageFile);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	private void readAndParseHeader() {
+		boolean endReached = false;
+		int blocksConsumed = 0;
+		int ordinal = 0;
+		
+		while (!endReached) {
+			if (getNextHdu()) {
+				blocksConsumed++;
+				
+				int idx = 0;
+
+				while (idx < g_hduSize) {
+					String key = new String(_hdu, idx, g_keySize);
+					String theRest = new String(_hdu, idx + g_keySize, g_recordSize - g_keySize);
+
+					if (theRest.startsWith("= ")) {
+						theRest = theRest.substring(2);
+					}
+
+					String[] tokens = theRest.split("/");
+
+					String value = tokens[0];
+					String comment = "";
+
+					if (tokens.length > 1) {
+						comment = tokens[1];
+					}
+
+					key = key.trim();
+					value = value.trim();
+					comment = comment.trim();
+
+					if (key.toLowerCase().equals("end")) {
+						endReached = true;
+						break;
+					} else {
+						_tags.put(key, new Tag(key, value, comment, ordinal));
+					}
+
+					ordinal++;
+					idx += g_recordSize;
+				}
+			}
+		}
+		
+		System.out.println("readAndParseHeader: "+ blocksConsumed +" blocks consumed; "+ ordinal +" tags");
+	}
+	
+	private void readImage() {
+		Tag tag = _tags.get("NAXIS");
+		
+		if (tag.valueAsInt() != 2) {
+			System.out.println("I only do mono, bro");
+			System.exit(1);
+		}
+		
+		int width = _tags.get("NAXIS1").valueAsInt();
+		int height = _tags.get("NAXIS2").valueAsInt();
+		
+		if ((width != 0) && (height != 0)) {
+			int bzero = _tags.get("BZERO").valueAsInt();
+			int bitPix = _tags.get("BITPIX").valueAsInt();
+			
+			BufferedImage image = null;
+			
+			if (bitPix == 16) {
+				image = new BufferedImage(width, height, BufferedImage.TYPE_USHORT_GRAY);
+			} else {
+				System.out.println("Can only do 16 bit depth");
+				System.exit(1);
+			}
+			
+			Raster raster = image.getData();
+			DataBufferUShort db = (DataBufferUShort)raster.getDataBuffer();
+			
+			int byteIdx = 0;
+			int shortIdx = 0;
+			int elem = 0;
+			
+			int sizeInElems = db.getSize();
+			int sizeInBytes = sizeInElems * 2;
+			
+			int maxVal = 0;
+			int minVal = 65536;
+			
+			while (byteIdx < sizeInBytes) {
+				if (!getNextHdu()) {
+					break;
+				}
+				
+				for (int i = 0; i < Math.min(g_hduSize, sizeInBytes - byteIdx); i += 2) {
+					elem = _hdu[i];
+					elem <<= 8;
+					elem |= _hdu[i + 1] & 0x000000ff;
+					
+					elem += bzero;
+					
+					if (elem < minVal) {
+						minVal = elem;
+					}
+					
+					if (elem > maxVal) {
+						maxVal = elem;
+					}
+					
+					db.setElem(shortIdx, elem);
+					shortIdx++;
+				}
+				
+				byteIdx += g_hduSize;
+			}
+						
+			System.out.println("Read "+ sizeInBytes +" bytes of image data");
+			System.out.println("min: "+ minVal +" max: "+ maxVal);
+			
+			image.setData(raster);
+			
+			try {
+				File f = new File(_imageFile.getName() +".png");
+				System.out.println("Writing image to "+ f.getCanonicalPath());
+				ImageIO.write(image, "png", f);
+			} catch (IOException e) {
+				System.out.println("This shit happened when I tried to write a tif...ya believe it?!");
+				e.printStackTrace();
+			}
+		}
+	}
+	
+	private void closeFile() {
+		if (_in != null) {
+			try {
+				_in.close();
+			} 
+			catch (IOException e) {
+				// Who could give a shit? Don't close it then, whatever. It's your show, chief
+			}
+		}
+	}
+	
+	private static class Tag {
+		public Tag(String key, String value, String comment, int ordinal) {
+			this.key = key;
+			this.value = value;
+			this.comment = comment;
+			this.ordinal = ordinal;
+		}
+		
+		public int valueAsInt() {
+			return Integer.parseInt(value);
+		}
+		
+		public String key;
+		public String value;
+		public String comment;
+		public int ordinal;
+	}
+	
+	private boolean getNextHdu() {
+		try {
+			_in.read(_hdu);
+			
+			return true;
+		} 
+		catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		return false;
+	}
+	
+	private File _imageFile;
+	private FileInputStream _in;
+	private byte[] _hdu;
+	private HashMap<String, Tag> _tags;
+	
+	private static final int g_hduSize = 2880;
+	private static final int g_recordSize = 80;
+	private static final int g_keySize = 8;
+}

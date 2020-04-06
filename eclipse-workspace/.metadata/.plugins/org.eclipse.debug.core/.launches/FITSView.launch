@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<launchConfiguration type="org.eclipse.jdt.launching.localJavaApplication">
+<listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_PATHS">
+<listEntry value="/FITSView/src/com/explorelearnshare/FITSView.java"/>
+</listAttribute>
+<listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_TYPES">
+<listEntry value="1"/>
+</listAttribute>
+<booleanAttribute key="org.eclipse.jdt.launching.ATTR_USE_START_ON_FIRST_THREAD" value="true"/>
+<stringAttribute key="org.eclipse.jdt.launching.MAIN_TYPE" value="com.explorelearnshare.FITSView"/>
+<stringAttribute key="org.eclipse.jdt.launching.MODULE_NAME" value="FITSView"/>
+<stringAttribute key="org.eclipse.jdt.launching.PROGRAM_ARGUMENTS" value="L_Ha_2020-04-03_03-20-40_M16_Bin1x1_180s__-20C_G139_OFS50.fit"/>
+<stringAttribute key="org.eclipse.jdt.launching.PROJECT_ATTR" value="FITSView"/>
+<stringAttribute key="org.eclipse.jdt.launching.WORKING_DIRECTORY" value="/Users/rseiffert/Documents/dev/git/fits"/>
+</launchConfiguration>
